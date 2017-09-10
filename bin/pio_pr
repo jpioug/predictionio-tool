@@ -1,0 +1,112 @@
+#!/bin/bash
+
+LANG=en_US.UTF-8
+LC_ALL=en_US.UTF-8
+
+which jq > /dev/null
+if [ $? != 0 ] ; then
+  echo "jq is not found."
+  exit 1
+fi
+
+GIT_PR=$1
+
+if [ x"$GIT_PR" = "x" ] ; then
+  echo "$0 [git_pr]"
+  exit 1
+fi
+
+WORKING_DIR=/tmp/apache_pr_${GIT_PR}.$$
+
+git remote -v | grep apache
+if [ $? != 0 ] ; then
+  echo "No Apache repository."
+  exit 1
+fi
+
+git checkout develop
+if [ $? != 0 ] ; then
+  echo "Failed to checkout develop."
+  exit 1
+fi
+git pull apache develop
+if [ $? != 0 ] ; then
+  echo "Failed to pull develop from apache."
+  exit 1
+fi
+
+REPO_NAME=`git remote get-url apache | sed -e "s/.*\/\([^\/]*\)\.git/\1/"`
+if [ x"$REPO_NAME" = "x" ] ; then
+  echo "No Git repository name."
+  exit 1
+fi
+
+mkdir -p $WORKING_DIR
+pushd $WORKING_DIR
+
+PR_INFO_FILE=$WORKING_DIR/pr_info.json
+curl -s https://api.github.com/repos/apache/$REPO_NAME/pulls/$GIT_PR > $PR_INFO_FILE
+
+GIT_REPO=`jq -r '.head.repo.name' $PR_INFO_FILE`
+if [ x"$GIT_REPO" = "x" ] ; then
+  echo ".head.repo.name is not found."
+  exit 1
+fi
+GIT_USERREPO=`jq -r '.head.repo.full_name' $PR_INFO_FILE`
+if [ x"$GIT_USERREPO" = "x" ] ; then
+  echo ".head.repo.full_name is not found."
+  exit 1
+fi
+GIT_BRANCH=`jq -r '.head.ref' $PR_INFO_FILE`
+if [ x"$GIT_BRANCH" = "x" ] ; then
+  echo ".head.ref is not found."
+  exit 1
+fi
+GIT_TITLE=`jq -r '.title' $PR_INFO_FILE`
+if [ x"$GIT_TITLE" = "x" ] ; then
+  echo ".title is not found."
+  exit 1
+fi
+GIT_BASE=`jq -r '.base.sha' $PR_INFO_FILE`
+if [ x"$GIT_BASE" = "x" ] ; then
+  echo ".base.sha is not found."
+  exit 1
+fi
+GIT_HEAD=`jq -r '.head.sha' $PR_INFO_FILE`
+if [ x"$GIT_HEAD" = "x" ] ; then
+  echo ".head.sha is not found."
+  exit 1
+fi
+
+git clone https://github.com/$GIT_USERREPO.git
+if [ ! -d $GIT_REPO ] ; then
+  echo "Failed to clone the repository."
+  exit 1
+fi
+cd $GIT_REPO
+git checkout -b $GIT_BRANCH origin/$GIT_BRANCH
+
+echo "=== Changes ==="
+git log ${GIT_BASE}..${GIT_HEAD}
+
+PR_AUTHOR=`git log ${GIT_BASE}..${GIT_HEAD} | grep ^Author: | sed -e "s/^Author: *//" | head -n1`
+if [ x"$PR_AUTHOR" = "x" ] ; then
+  echo "No PR author."
+  exit 1
+fi
+
+COMMIT_CMD=$WORKING_DIR/git_push.sh
+echo -n "git commit --author \""$PR_AUTHOR"\"" > $COMMIT_CMD
+echo -n " -m \""$GIT_TITLE"\"" >> $COMMIT_CMD
+echo -n " -m \"Closes #"$GIT_PR"\"" >> $COMMIT_CMD
+
+popd
+git pull --squash https://github.com/$GIT_USERREPO $GIT_BRANCH
+git status
+cat $COMMIT_CMD
+echo
+# bash $COMMIT_CMD
+echo "git push apache develop"
+
+rm -rf $WORKING_DIR
+
