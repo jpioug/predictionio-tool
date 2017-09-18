@@ -10,10 +10,14 @@ if [ $? != 0 ] ; then
 fi
 
 GIT_PR=$1
+GIT_TARGET_BRANCH=$2
 
 if [ x"$GIT_PR" = "x" ] ; then
   echo "$0 [git_pr]"
   exit 1
+fi
+if [ x"$GIT_TARGET_BRANCH" = "x" ] ; then
+  GIT_TARGET_BRANCH=develop
 fi
 
 WORKING_DIR=/tmp/apache_pr_${GIT_PR}.$$
@@ -24,14 +28,14 @@ if [ $? != 0 ] ; then
   exit 1
 fi
 
-git checkout develop
+git checkout $GIT_TARGET_BRANCH
 if [ $? != 0 ] ; then
-  echo "Failed to checkout develop."
+  echo "Failed to checkout $GIT_TARGET_BRANCH."
   exit 1
 fi
-git pull apache develop
+git pull apache $GIT_TARGET_BRANCH
 if [ $? != 0 ] ; then
-  echo "Failed to pull develop from apache."
+  echo "Failed to pull $GIT_TARGET_BRANCH from apache."
   exit 1
 fi
 
@@ -106,7 +110,7 @@ git status
 cat $COMMIT_CMD
 echo
 # bash $COMMIT_CMD
-echo "git push apache develop"
+echo "git push apache $GIT_TARGET_BRANCH"
 
 rm -rf $WORKING_DIR
 
